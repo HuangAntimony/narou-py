@@ -1,62 +1,64 @@
 # narou-py
 
-Standalone Python downloader for Narou-family and other major JP webnovel sites with automatic EPUB export.
+Python downloader for major JP webnovel platforms with automatic EPUB export.
 
-## Scope
+## Supported Sites
 
-- Supported sites:
-  - `https://ncode.syosetu.com/<ncode>/` and `https://novel18.syosetu.com/<ncode>/` (Narou family, unified handling; also accepts noc/mnlt/mid/nl domains)
-  - `https://syosetu.org/novel/<id>/` (Hameln)
-  - `https://kakuyomu.jp/works/<id>` (Kakuyomu)
-  - `https://www.akatsuki-novels.com/stories/index/novel_id~<id>` (Akatsuki)
-  - `https://www.mai-net.net/bbs/sst/sst.php?act=dump&cate=<cate>&all=<id>` (Arcadia)
-- Implemented:
-  - Target/site detection
-  - TOC fetch + metadata extraction
-  - Subtitle list parsing
-  - Section download (introduction/body/postscript)
-  - Local archive output
+- `https://ncode.syosetu.com/<ncode>/`
+- `https://novel18.syosetu.com/<ncode>/` (also `noc/mnlt/mid/nl.syosetu.com`)
+- `https://syosetu.org/novel/<id>/` (Hameln)
+- `https://kakuyomu.jp/works/<id>` (Kakuyomu)
+- `https://www.akatsuki-novels.com/stories/index/novel_id~<id>` (Akatsuki)
+- `https://www.mai-net.net/bbs/sst/sst.php?act=dump&cate=<cate>&all=<id>` (Arcadia)
 
-## Install
+## Run Directly
+
+No install is required in this repository workflow. Run directly:
 
 ```bash
-pip install -e .
+python3 -m narou_py "<novel-url>"
 ```
 
-## Run
+Optional (if you want command entry points in your environment):
 
 ```bash
-narou-py "https://ncode.syosetu.com/n1234ab/"
+python3 -m pip install -e .
 ```
 
-or
+## Basic Usage
 
 ```bash
-narou-py "https://syosetu.org/novel/123456/"
+python3 -m narou_py "https://ncode.syosetu.com/n1234ab/"
+python3 -m narou_py "https://syosetu.org/novel/123456/"
+python3 -m narou_py "https://kakuyomu.jp/works/1177354054880000000"
 ```
 
-or
+## Useful Flags
+
+- `--no-skip-existing`: re-download all chapters
+- `--subject <tag>`: add EPUB `dc:subject` (repeatable)
+- `--title "<custom title>"`: fully override original title for archive name, `toc.json`, EPUB metadata, and cover title
+- `--output <dir>`: archive root (default: `archive`)
+- `--epub-output <file>`: output EPUB path
+
+Examples:
 
 ```bash
-narou-py "https://kakuyomu.jp/works/1177354054880000000"
+python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --subject fantasy --subject isekai
+python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --no-skip-existing
+python3 -m narou_py "https://syosetu.org/novel/307058/" --title "生意気な義妹が引きこもりになったので優しくしたら激甘ブラコン化した話"
 ```
 
-Default behavior:
-- Check existing downloaded chapters under `本文/*.json`
-- Skip chapters already downloaded
-- Download only missing chapters
-- Auto export EPUB after download
-- If `cover.jpg` / `cover.png` / `cover.jpeg` exists in novel directory, embed it as EPUB cover
+## Output Notes
 
-Add `dc:subject` metadata or force re-download all chapters:
+- Chapters are stored under `本文/*.json`
+- Existing non-empty chapters are skipped by default
+- EPUB is exported automatically after download
+- If `cover.jpg/png/jpeg` exists in novel directory, it is used as cover
+- If no cover file exists, `cover.png` is auto-generated
 
-```bash
-narou-py "https://ncode.syosetu.com/n1234ab/" --subject fantasy --subject isekai
-narou-py "https://ncode.syosetu.com/n1234ab/" --no-skip-existing
-narou-py "https://syosetu.org/novel/307058/" --title "生意気な義妹が引きこもりになったので優しくしたら激甘ブラコン化した話"
-```
+EPUB package paths:
 
-Output layout is now aligned to AozoraEpub3-style package paths:
 - `META-INF/container.xml` -> `item/standard.opf`
 - `item/nav.xhtml`
 - `item/toc.ncx`
