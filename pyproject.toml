@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "narou-py"
+version = "0.1.0"
+description = "Narou/Hameln downloader with automatic EPUB export"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "GPLv3" }
+authors = [
+  { name = "antimony" }
+]
+keywords = ["narou", "hameln", "epub", "webnovel"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "Pillow>=10.0.0",
+]
+
+[project.scripts]
+narou-py = "narou_py.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["narou_py"]
