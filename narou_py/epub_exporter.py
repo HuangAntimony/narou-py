@@ -103,6 +103,7 @@ class EpubExporter:
 
     def _chapter_xhtml(self, section: dict, order: int) -> str:
         title = section['subtitle'] or f'第{order}話'
+        section_anchor = f'sec-title-{order:04d}'
         chapter = section['chapter']
         intro = self._html_fragment_to_paragraphs(section['introduction'])
         body = self._html_fragment_to_paragraphs(section['body'])
@@ -120,10 +121,10 @@ class EpubExporter:
             '  <meta charset="UTF-8"/>\n'
             '  <link rel="stylesheet" type="text/css" href="../style/book-style.css"/>\n'
             '</head>\n'
-            '<body>\n'
+            '<body class="p-text">\n'
             '  <div class="main">\n'
             f'    {chapter_header}\n'
-            f'    <h1>{escape(title)}</h1>\n'
+            f'    <h1 id="{section_anchor}">{escape(title)}</h1>\n'
             f'    {self._block("前書き", intro)}\n'
             f'    {self._body_block(body)}\n'
             f'    {self._block("後書き", post)}\n'
@@ -140,13 +141,13 @@ class EpubExporter:
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<!DOCTYPE html>\n'
             '<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" '
-            'xml:lang="ja" lang="ja" class="vrtl p-titlepage">\n'
+            'xml:lang="ja" lang="ja" class="vrtl">\n'
             '<head>\n'
             f'  <title>{title}</title>\n'
             '  <meta charset="UTF-8"/>\n'
             '  <link rel="stylesheet" type="text/css" href="../style/book-style.css"/>\n'
             '</head>\n'
-            '<body>\n'
+            '<body class="p-titlepage">\n'
             '  <div class="main">\n'
             f'    <h1 class="book-title">{title}</h1>\n'
             f'    <div class="author"><p>{author}</p></div>\n'
@@ -215,6 +216,7 @@ class EpubExporter:
         current_chapter = None
         has_chapter_nesting = False
         section_pos = 0
+        chapter_open = False
         for item_id, filename, title in chapter_files:
             chapter_name = ''
             if item_id.startswith('sec') and section_pos < len(sections):
@@ -222,17 +224,25 @@ class EpubExporter:
                 section_pos += 1
             if chapter_name and chapter_name != current_chapter:
                 has_chapter_nesting = True
+                chapter_anchor = f'sec-title-{section_pos:04d}'
+                if chapter_open:
+                    nav_points.append('</navPoint>')
                 nav_points.append(
                     '<navPoint id="navPoint-{0}" playOrder="{0}">'
                     '<navLabel><text>{1}</text></navLabel>'
-                    '<content src="{2}"/></navPoint>'.format(
+                    '<content src="{2}"/>'.format(
                         play_order,
                         escape(chapter_name),
-                        escape(filename),
+                        escape(f'{filename}#{chapter_anchor}'),
                     )
                 )
                 play_order += 1
                 current_chapter = chapter_name
+                chapter_open = True
+            if not chapter_name and chapter_open:
+                nav_points.append('</navPoint>')
+                chapter_open = False
+                current_chapter = None
             nav_points.append(
                 '<navPoint id="navPoint-{0}" playOrder="{0}">'
                 '<navLabel><text>{1}</text></navLabel>'
@@ -243,6 +253,8 @@ class EpubExporter:
                 )
             )
             play_order += 1
+        if chapter_open:
+            nav_points.append('</navPoint>')
         return (
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">\n'
@@ -273,9 +285,12 @@ class EpubExporter:
         return (
             '@charset "utf-8";\n'
             '@namespace "http://www.w3.org/1999/xhtml";\n'
-            'html.vrtl{writing-mode:vertical-rl;-webkit-writing-mode:vertical-rl;}\n'
-            'body{font-family:serif;line-height:1.8;margin:0;}\n'
-            '.main{margin:0 auto;padding:1em;max-width:34em;}\n'
+            '@page{margin:.5em;}\n'
+            'html.vrtl{writing-mode:vertical-rl;-webkit-writing-mode:vertical-rl;-epub-writing-mode:vertical-rl;line-break:strict;-epub-line-break:strict;word-break:normal;-epub-word-break:normal;}\n'
+            'body{font-family:serif;line-height:1.8;margin:0;padding:0;display:block;}\n'
+            '.main{padding:1em;}\n'
+            '.block{display:block;}\n'
+            '.block-body{page-break-inside:auto;break-inside:auto;}\n'
             'h1{font-size:1.2em;margin:1.2em 0 .8em;}\n'
             'h2.chapter{font-size:1em;color:#555;margin-top:2em;}\n'
             'h3{font-size:1em;margin-top:1.6em;border-bottom:1px solid #ddd;}\n'
@@ -290,14 +305,28 @@ class EpubExporter:
         items = []
         current_chapter = None
         section_pos = 0
+        chapter_open = False
         for item_id, path, title in chapter_files:
-            if item_id.startswith('sec') and section_pos < len(sections):
+            chapter_name = ''
+            is_section = item_id.startswith('sec')
+            if is_section and section_pos < len(sections):
                 chapter_name = sections[section_pos].get('chapter', '').strip()
                 section_pos += 1
                 if chapter_name and chapter_name != current_chapter:
-                    items.append(f'<li class="chapter">{escape(chapter_name)}</li>')
+                    if chapter_open:
+                        items.append('</ol></li>')
+                    items.append(
+                        f'<li class="chapter"><a href="{escape(path)}">{escape(chapter_name)}</a><ol>'
+                    )
                     current_chapter = chapter_name
+                    chapter_open = True
+            if not chapter_name and chapter_open:
+                items.append('</ol></li>')
+                chapter_open = False
+                current_chapter = None
             items.append(f'<li><a href="{escape(path)}">{escape(title)}</a></li>')
+        if chapter_open:
+            items.append('</ol></li>')
         body_href = 'xhtml/0001.xhtml'
         for _id, path, _title in chapter_files:
             if path == 'xhtml/cover.xhtml':
@@ -320,7 +349,6 @@ class EpubExporter:
             '<body>\n'
             '<nav epub:type="landmarks" id="landmarks" hidden="">\n'
             '<h2>Guide</h2><ol>'
-            '<li><a epub:type="toc" href="nav.xhtml">目次</a></li>'
             f'{cover_landmark}'
             '<li><a epub:type="titlepage" href="xhtml/title.xhtml">扉</a></li>'
             f'<li><a epub:type="bodymatter" href="{escape(body_href)}">本文</a></li>'
@@ -569,13 +597,13 @@ class EpubExporter:
     def _block(title: str, body: str) -> str:
         if not body:
             return ''
-        return f'<section><h3>{escape(title)}</h3>{body}</section>'
+        return f'<div class="block block-preface"><h3>{escape(title)}</h3>{body}</div>'
 
     @staticmethod
     def _body_block(body: str) -> str:
         if not body:
             return ''
-        return f'<section>{body}</section>'
+        return f'<div class="block block-body">{body}</div>'
 
     @staticmethod
     def _book_id(seed: str) -> str:

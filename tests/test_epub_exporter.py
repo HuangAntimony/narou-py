@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 from narou_py.epub_exporter import EpubExporter
 
@@ -85,6 +86,24 @@ class EpubExporterTest(unittest.TestCase):
                 nav = zf.read('item/nav.xhtml').decode('utf-8')
                 self.assertIn('第一章', nav)
                 self.assertIn('第二章', nav)
+                self.assertIn('<li class="chapter"><a href="xhtml/0001.xhtml">第一章</a><ol>', nav)
+                self.assertIn('<li class="chapter"><a href="xhtml/0002.xhtml">第二章</a><ol>', nav)
+                self.assertNotIn('<li class="chapter">第一章</li>', nav)
+                self.assertNotIn('epub:type="toc" href="nav.xhtml"', nav)
+                ET.fromstring(nav)
+
+                ncx = zf.read('item/toc.ncx').decode('utf-8')
+                self.assertIn('<content src="xhtml/0001.xhtml#sec-title-0001"/><navPoint', ncx)
+                self.assertIn('<content src="xhtml/0002.xhtml"/></navPoint>', ncx)
+                ET.fromstring(ncx)
+
+                chapter = zf.read('item/xhtml/0001.xhtml').decode('utf-8')
+                self.assertIn('<div class="block block-body">', chapter)
+                self.assertNotIn('<section>', chapter)
+                self.assertIn('<h1 id="sec-title-0001">第一話</h1>', chapter)
+
+                title = zf.read('item/xhtml/title.xhtml').decode('utf-8')
+                self.assertIn('<body class="p-titlepage">', title)
 
     def test_export_epub_with_cover_image(self):
         with tempfile.TemporaryDirectory() as tmp:
