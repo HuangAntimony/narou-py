@@ -105,6 +105,10 @@ class EpubExporterTest(unittest.TestCase):
                 title = zf.read('item/xhtml/title.xhtml').decode('utf-8')
                 self.assertIn('<body class="p-titlepage">', title)
 
+                css = zf.read('item/style/book-style.css').decode('utf-8')
+                self.assertIn('.main{margin:0;padding:0;}', css)
+                self.assertIn('p{text-indent:1em;margin:0;text-align:justify;}', css)
+
     def test_export_epub_with_cover_image(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / '小説家になろう' / 'n0002aa テスト'
