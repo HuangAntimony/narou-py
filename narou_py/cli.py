@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from .aozora_exporter import AozoraEpubExporter, AozoraExportError
 from .downloader import PyNarouDownloader, UnsupportedTarget
 from .epub_exporter import EpubExportError, EpubExporter
 
@@ -20,6 +21,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--epub-output',
         help='Output epub file path (default: <novel_dir>/<title>.epub)',
+    )
+    parser.add_argument(
+        '--no-aozora',
+        action='store_true',
+        help='Use built-in epub packer instead of AozoraEpub3',
+    )
+    parser.add_argument(
+        '--aozora-jar',
+        help='Path to AozoraEpub3.jar (if omitted, built-in epub packer is used)',
     )
     parser.add_argument(
         '--subject',
@@ -44,9 +54,13 @@ def main() -> int:
     try:
         downloader = PyNarouDownloader(args.target, output_root=args.output, custom_title=args.title)
         novel_dir = downloader.download(skip_existing=not args.no_skip_existing)
-        exporter = EpubExporter(novel_dir)
+        use_aozora = bool(args.aozora_jar) and not args.no_aozora
+        if use_aozora:
+            exporter = AozoraEpubExporter(novel_dir, aozora_jar=args.aozora_jar)
+        else:
+            exporter = EpubExporter(novel_dir)
         epub_path = exporter.export(args.epub_output, subjects=args.subject)
-    except (UnsupportedTarget, EpubExportError) as exc:
+    except (UnsupportedTarget, EpubExportError, AozoraExportError) as exc:
         print(str(exc))
         return 2
     print(epub_path)
