@@ -42,30 +42,77 @@ class AozoraExporterTest(unittest.TestCase):
             encoding='utf-8',
         )
 
-    def test_export_invokes_aozora_with_given_jar(self):
+    def test_export_invokes_aozora_rs_binary_without_rebuild(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / 'novel'
             root.mkdir(parents=True, exist_ok=True)
             self._make_archive(root)
-            jar = Path(tmp) / 'AozoraEpub3.jar'
-            jar.write_bytes(b'fake')
+            rs_root = Path(tmp) / 'AozoraEpub3-rs'
+            rs_bin = rs_root / 'target' / 'release' / 'aozoraepub3-rs'
+            rs_bin.parent.mkdir(parents=True, exist_ok=True)
+            rs_bin.write_bytes(b'fake-binary')
             output_path = root / 'custom.epub'
 
             def fake_run(command, **kwargs):
-                dst_index = command.index('-dst')
+                self.assertEqual(Path(command[0]).resolve(), rs_bin.resolve())
+                self.assertIn('--enc', command)
+                self.assertIn('-d', command)
+                dst_index = command.index('-d')
                 out_dir = Path(command[dst_index + 1])
                 with zipfile.ZipFile(out_dir / 'generated.epub', 'w') as zf:
                     zf.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
                     zf.writestr('item/standard.opf', '<package><metadata></metadata></package>')
                 return subprocess.CompletedProcess(command, 0, stdout='変換完了', stderr='')
 
-            with patch('narou_py.aozora_exporter.subprocess.run', side_effect=fake_run) as mocked:
-                exporter = AozoraEpubExporter(root, aozora_jar=jar)
+            with (
+                patch('narou_py.aozora_exporter.subprocess.run', side_effect=fake_run) as mocked,
+                patch.object(AozoraEpubExporter, '_resolve_aozora_rs_root', return_value=rs_root),
+            ):
+                exporter = AozoraEpubExporter(root)
                 result = exporter.export(output_path)
 
             self.assertEqual(result, output_path)
             self.assertTrue(output_path.exists())
             self.assertEqual(mocked.call_count, 1)
+
+    def test_export_builds_aozora_rs_when_release_binary_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'novel'
+            root.mkdir(parents=True, exist_ok=True)
+            self._make_archive(root)
+            rs_root = Path(tmp) / 'AozoraEpub3-rs'
+            rs_root.mkdir(parents=True, exist_ok=True)
+            rs_bin = rs_root / 'target' / 'release' / 'aozoraepub3-rs'
+            output_path = root / 'custom.epub'
+
+            def fake_run(command, **kwargs):
+                if Path(command[0]).name == 'cargo':
+                    self.assertEqual(command[1:], ['build', '--release'])
+                    self.assertEqual(Path(kwargs['cwd']).resolve(), rs_root.resolve())
+                    rs_bin.parent.mkdir(parents=True, exist_ok=True)
+                    rs_bin.write_bytes(b'fake-binary')
+                    return subprocess.CompletedProcess(command, 0, stdout='build ok', stderr='')
+
+                self.assertEqual(Path(command[0]).resolve(), rs_bin.resolve())
+                self.assertIn('--enc', command)
+                self.assertIn('-d', command)
+                dst_index = command.index('-d')
+                out_dir = Path(command[dst_index + 1])
+                with zipfile.ZipFile(out_dir / 'generated.epub', 'w') as zf:
+                    zf.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
+                    zf.writestr('item/standard.opf', '<package><metadata></metadata></package>')
+                return subprocess.CompletedProcess(command, 0, stdout='変換完了', stderr='')
+
+            with (
+                patch('narou_py.aozora_exporter.subprocess.run', side_effect=fake_run) as mocked,
+                patch.object(AozoraEpubExporter, '_resolve_aozora_rs_root', return_value=rs_root),
+            ):
+                exporter = AozoraEpubExporter(root)
+                result = exporter.export(output_path)
+
+            self.assertEqual(result, output_path)
+            self.assertTrue(output_path.exists())
+            self.assertEqual(mocked.call_count, 2)
 
     def test_add_dc_subject_to_generated_epub(self):
         with tempfile.TemporaryDirectory() as tmp:

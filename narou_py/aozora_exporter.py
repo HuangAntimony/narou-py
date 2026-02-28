@@ -19,9 +19,9 @@ class AozoraExportError(EpubExportError):
 
 
 class AozoraEpubExporter(AozoraTextConverterMixin, EpubExporter):
-    def __init__(self, novel_dir: str | Path, *, aozora_jar: str | Path | None = None) -> None:
+    def __init__(self, novel_dir: str | Path, *, aozora: str | Path | None = None) -> None:
         super().__init__(novel_dir)
-        self.aozora_jar = Path(aozora_jar).expanduser() if aozora_jar else None
+        self.aozora = Path(aozora).expanduser() if aozora else None
 
     def export(self, output_path: str | Path | None = None, *, subjects: list[str] | None = None) -> Path:
         toc = self._load_toc()
@@ -31,34 +31,31 @@ class AozoraEpubExporter(AozoraTextConverterMixin, EpubExporter):
         target_path = Path(output_path) if output_path else self.novel_dir / f'{self._safe_filename(toc["title"])}.epub'
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
-        aozora_jar = self._resolve_aozora_jar()
-        java_bin = shutil.which('java')
-        if not java_bin:
-            raise AozoraExportError('java not found in PATH')
+        project_root = self._resolve_aozora_rs_root()
+        aozora_bin = self._resolve_aozora_rs_bin_or_default(project_root)
+        if self._should_build_aozora_rs(project_root, aozora_bin):
+            self._build_aozora_rs_release(project_root)
+            aozora_bin = self._resolve_aozora_rs_bin(project_root)
+        elif not aozora_bin.exists():
+            raise AozoraExportError(
+                f'AozoraEpub3-rs executable not found: {aozora_bin}. Run cargo build --release in {project_root}'
+            )
 
         txt_path = self._write_aozora_input_text(toc, sections, target_path.parent)
         before = {path.resolve(): path.stat().st_mtime_ns for path in target_path.parent.glob('*.epub')}
         command = [
-            java_bin,
-            '-Dfile.encoding=UTF-8',
-            '-Dstdout.encoding=UTF-8',
-            '-Dstderr.encoding=UTF-8',
-            '-Dsun.stdout.encoding=UTF-8',
-            '-Dsun.stderr.encoding=UTF-8',
-            '-cp',
-            aozora_jar.name,
-            'AozoraEpub3',
-            '-enc',
+            str(aozora_bin.resolve()),
+            '--of',
+            '--enc',
             'UTF-8',
-            '-of',
-            '-dst',
+            '-d',
             str(target_path.parent.resolve()),
             str(txt_path.resolve()),
         ]
         try:
             result = subprocess.run(
                 command,
-                cwd=str(aozora_jar.parent.resolve()),
+                cwd=str(project_root.resolve()),
                 capture_output=True,
                 text=True,
                 encoding='utf-8',
@@ -69,7 +66,7 @@ class AozoraEpubExporter(AozoraTextConverterMixin, EpubExporter):
             txt_path.unlink(missing_ok=True)
         if result.returncode != 0:
             raise AozoraExportError(
-                f'AozoraEpub3 failed (exit={result.returncode}): {result.stdout.strip()} {result.stderr.strip()}'.strip()
+                f'AozoraEpub3-rs failed (exit={result.returncode}): {result.stdout.strip()} {result.stderr.strip()}'.strip()
             )
         produced = self._detect_generated_epub(target_path.parent, before)
         if produced.resolve() != target_path.resolve():
@@ -78,30 +75,123 @@ class AozoraEpubExporter(AozoraTextConverterMixin, EpubExporter):
             self._add_dc_subject_to_epub(target_path, subjects)
         return target_path
 
-    def _resolve_aozora_jar(self) -> Path:
+    def _resolve_aozora_rs_root(self) -> Path:
         candidates: list[Path] = []
-        if self.aozora_jar:
-            candidates.append(self.aozora_jar)
-        env_jar = os.environ.get('NAROU_PY_AOZORAEPUB3_JAR') or os.environ.get('AOZORAEPUB3_JAR')
-        if env_jar:
-            candidates.append(Path(env_jar).expanduser())
-        repo_root = Path(__file__).resolve().parents[1]
+        if self.aozora and self.aozora.is_dir():
+            candidates.append(self.aozora)
+
+        env_root = os.environ.get('NAROU_PY_AOZORAEPUB3_RS_ROOT') or os.environ.get('AOZORAEPUB3_RS_ROOT')
+        if env_root:
+            candidates.append(Path(env_root).expanduser())
+
         projects_root = Path(__file__).resolve().parents[2]
+        repo_root = Path(__file__).resolve().parents[1]
         candidates.extend(
             [
-                repo_root / 'AozoraEpub3.jar',
-                projects_root / 'AozoraEpub3' / 'out' / 'AozoraEpub3.jar',
-                projects_root / 'AozoraEpub3' / 'AozoraEpub3.jar',
+                projects_root / 'AozoraEpub3-rs',
+                repo_root / 'AozoraEpub3-rs',
             ]
         )
-        candidates.extend((projects_root / 'AozoraEpub3' / 'out').glob('AozoraEpub3*.jar'))
+
         for candidate in candidates:
-            path = candidate.expanduser().resolve()
-            if path.exists() and path.is_file():
-                return path
+            root = candidate.expanduser().resolve()
+            if root.is_dir() and (root / 'Cargo.toml').exists():
+                return root
+
         raise AozoraExportError(
-            'AozoraEpub3.jar not found; use --aozora-jar or set NAROU_PY_AOZORAEPUB3_JAR'
+            'AozoraEpub3-rs project not found; expected ../AozoraEpub3-rs or set NAROU_PY_AOZORAEPUB3_RS_ROOT'
         )
+
+    def _build_aozora_rs_release(self, project_root: Path) -> None:
+        cargo_bin = shutil.which('cargo')
+        if not cargo_bin:
+            raise AozoraExportError('cargo not found in PATH')
+        result = subprocess.run(
+            [cargo_bin, 'build', '--release'],
+            cwd=str(project_root.resolve()),
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace',
+            check=False,
+        )
+        if result.returncode != 0:
+            raise AozoraExportError(
+                f'cargo build --release failed (exit={result.returncode}): {result.stdout.strip()} {result.stderr.strip()}'.strip()
+            )
+
+    def _resolve_aozora_rs_bin(self, project_root: Path) -> Path:
+        for candidate in self._aozora_rs_bin_candidates(project_root):
+            bin_path = candidate.expanduser().resolve()
+            if bin_path.exists() and bin_path.is_file():
+                return bin_path
+
+        raise AozoraExportError(
+            'AozoraEpub3-rs executable not found after build; expected target/release/aozoraepub3-rs'
+        )
+
+    def _resolve_aozora_rs_bin_or_default(self, project_root: Path) -> Path:
+        for candidate in self._aozora_rs_bin_candidates(project_root):
+            bin_path = candidate.expanduser().resolve()
+            if bin_path.exists() and bin_path.is_file():
+                return bin_path
+        return self._default_aozora_rs_bin(project_root).resolve()
+
+    def _aozora_rs_bin_candidates(self, project_root: Path) -> list[Path]:
+        candidates: list[Path] = []
+        if self.aozora and self.aozora.is_file():
+            candidates.append(self.aozora)
+
+        env_bin = os.environ.get('NAROU_PY_AOZORAEPUB3_RS_BIN') or os.environ.get('AOZORAEPUB3_RS_BIN')
+        if env_bin:
+            candidates.append(Path(env_bin).expanduser())
+
+        candidates.extend(
+            [
+                project_root / 'target' / 'release' / 'aozoraepub3-rs',
+                project_root / 'target' / 'release' / 'aozoraepub3-rs.exe',
+            ]
+        )
+        return candidates
+
+    @staticmethod
+    def _default_aozora_rs_bin(project_root: Path) -> Path:
+        if os.name == 'nt':
+            return project_root / 'target' / 'release' / 'aozoraepub3-rs.exe'
+        return project_root / 'target' / 'release' / 'aozoraepub3-rs'
+
+    def _should_build_aozora_rs(self, project_root: Path, bin_path: Path) -> bool:
+        if not bin_path.exists():
+            return True
+        if not self._is_default_aozora_rs_bin(project_root, bin_path):
+            return False
+        return self._aozora_rs_source_newer_than_bin(project_root, bin_path)
+
+    def _is_default_aozora_rs_bin(self, project_root: Path, bin_path: Path) -> bool:
+        release_dir = (project_root / 'target' / 'release').resolve()
+        try:
+            return bin_path.resolve().parent == release_dir
+        except OSError:
+            return False
+
+    @staticmethod
+    def _aozora_rs_source_newer_than_bin(project_root: Path, bin_path: Path) -> bool:
+        try:
+            bin_mtime = bin_path.stat().st_mtime_ns
+        except OSError:
+            return True
+        watched = [
+            project_root / 'Cargo.toml',
+            project_root / 'Cargo.lock',
+        ]
+        watched.extend((project_root / 'src').rglob('*.rs'))
+        for path in watched:
+            try:
+                if path.stat().st_mtime_ns > bin_mtime:
+                    return True
+            except OSError:
+                continue
+        return False
 
     def _write_aozora_input_text(self, toc: dict, sections: list[dict], output_dir: Path) -> Path:
         lines: list[str] = []

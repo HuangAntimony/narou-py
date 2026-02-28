@@ -26,13 +26,13 @@ class CliTest(unittest.TestCase):
     @patch('narou_py.cli.EpubExporter')
     @patch('narou_py.cli.AozoraEpubExporter')
     @patch('builtins.print')
-    def test_aozora_used_when_jar_is_given(self, mocked_print, mocked_aozora, mocked_builtin, mocked_downloader):
+    def test_aozora_used_when_path_is_given(self, mocked_print, mocked_aozora, mocked_builtin, mocked_downloader):
         mocked_downloader.return_value.download.return_value = Path('/tmp/novel')
         mocked_aozora.return_value.export.return_value = Path('/tmp/novel/book.epub')
 
         with patch(
             'sys.argv',
-            ['narou-py', 'https://ncode.syosetu.com/n1234ab/', '--aozora-jar', '/opt/AozoraEpub3.jar'],
+            ['narou-py', 'https://ncode.syosetu.com/n1234ab/', '--aozora', '/opt/AozoraEpub3-rs'],
         ):
             exit_code = cli.main()
 

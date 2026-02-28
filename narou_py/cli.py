@@ -25,11 +25,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         '--no-aozora',
         action='store_true',
-        help='Use built-in epub packer instead of AozoraEpub3',
+        help='Use built-in epub packer instead of AozoraEpub3-rs',
     )
     parser.add_argument(
-        '--aozora-jar',
-        help='Path to AozoraEpub3.jar (if omitted, built-in epub packer is used)',
+        '--aozora',
+        nargs='?',
+        const='auto',
+        metavar='PATH',
+        help='Use AozoraEpub3-rs exporter; optional PATH to project root or executable',
     )
     parser.add_argument(
         '--subject',
@@ -54,9 +57,10 @@ def main() -> int:
     try:
         downloader = PyNarouDownloader(args.target, output_root=args.output, custom_title=args.title)
         novel_dir = downloader.download(skip_existing=not args.no_skip_existing)
-        use_aozora = bool(args.aozora_jar) and not args.no_aozora
+        use_aozora = bool(args.aozora) and not args.no_aozora
         if use_aozora:
-            exporter = AozoraEpubExporter(novel_dir, aozora_jar=args.aozora_jar)
+            aozora_path = None if args.aozora == 'auto' else args.aozora
+            exporter = AozoraEpubExporter(novel_dir, aozora=aozora_path)
         else:
             exporter = EpubExporter(novel_dir)
         epub_path = exporter.export(args.epub_output, subjects=args.subject)

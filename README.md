@@ -40,8 +40,8 @@ python3 -m narou_py "https://kakuyomu.jp/works/1177354054880000000"
 - `--title "<custom title>"`: fully override original title for archive name, `toc.json`, EPUB metadata, and cover title
 - `--output <dir>`: archive root (default: `archive`)
 - `--epub-output <file>`: output EPUB path
-- `--aozora-jar <file>`: use AozoraEpub3.jar for EPUB export
-- `--no-aozora`: force built-in EPUB exporter even when `--aozora-jar` is provided
+- `--aozora [path]`: use AozoraEpub3-rs for EPUB export (`path` can be project root or executable)
+
 
 Examples:
 
@@ -49,7 +49,8 @@ Examples:
 python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --subject fantasy --subject isekai
 python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --no-skip-existing
 python3 -m narou_py "https://syosetu.org/novel/307058/" --title "生意気な義妹が引きこもりになったので優しくしたら激甘ブラコン化した話"
-python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --aozora-jar "/path/to/AozoraEpub3.jar"
+python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --aozora
+python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --aozora "/path/to/AozoraEpub3-rs"
 ```
 
 ## Output Notes
@@ -57,8 +58,8 @@ python3 -m narou_py "https://ncode.syosetu.com/n1234ab/" --aozora-jar "/path/to/
 - Chapters are stored under `本文/*.json`
 - Existing non-empty chapters are skipped by default
 - EPUB is exported automatically after download
-- By default, built-in EPUB exporter is used (no Java/Aozora dependency)
-- If `--aozora-jar` is provided, AozoraEpub3 is used for EPUB generation
+- By default, built-in EPUB exporter is used
+- If `--aozora` is provided, AozoraEpub3-rs is used for EPUB generation
 - If `cover.jpg/png/jpeg` exists in novel directory, it is used as cover
 - If no cover file exists, `cover.png` is auto-generated
 
